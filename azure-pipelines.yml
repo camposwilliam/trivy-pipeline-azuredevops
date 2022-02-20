@@ -1,0 +1,59 @@
+# Docker
+# Build a Docker image
+# https://docs.microsoft.com/azure/devops/pipelines/languages/docker
+
+trigger:
+  paths:
+    include:
+      - Dockerfile/Dockerfile
+
+
+resources:
+- repo: self
+
+variables:
+  - name: repository
+    value: 'grafana'
+  - name: dockerfile
+    value: '$(Build.SourcesDirectory)/Dockerfile/Dockerfile'
+  - name: containerRegistry
+    value: 'acr-monitoramento'
+
+stages :
+  - stage: Build
+    displayName: Build and push stage
+    jobs: 
+    - job: Build
+      displayName: Build job
+      steps:
+      - task: Docker@2
+        displayName: Build and push an image to container registry
+        inputs:
+          command: buildAndPush
+          repository: ${{ variables.repository }}
+          dockerfile: ${{ variables.dockerfile }}
+          containerRegistry: ${{ variables.containerRegistry }}
+          tags: latest
+
+      - task: Bash@3
+        displayName: Install aquasecurity/trivy
+        inputs:
+          targetType: 'inline'
+          script: |
+            sudo apt-get install wget apt-transport-https gnupg lsb-release
+            wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+            echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
+            sudo apt-get update
+            sudo apt-get install trivy
+        
+      - task: Bash@3
+        displayName: Scanner for vulnerabilities config
+        inputs:
+          targetType: 'inline'
+          script: 'trivy config $(System.DefaultWorkingDirectory)/Dockerfile'
+      
+      - task: Bash@3
+        displayName: Scanner for vulnerabilities Image
+        inputs:
+          targetType: 'inline'
+          script: 'trivy image grafana/grafana:latest | more'
